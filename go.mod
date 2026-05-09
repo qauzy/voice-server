@@ -1,4 +1,4 @@
-module voice_server
+module voice-server
 
 go 1.24.2
 

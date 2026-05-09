@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"voice_server/config"
-	"voice_server/internal/bootstrap"
-	"voice_server/internal/logger"
-	"voice_server/internal/router"
+	"voice-server/config"
+	"voice-server/internal/bootstrap"
+	"voice-server/internal/logger"
+	"voice-server/internal/router"
 )
 
 // Setup 加载配置、初始化 asr_server 依赖并返回 HTTP Handler 与监听地址，供主进程内嵌时使用。

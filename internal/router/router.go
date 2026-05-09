@@ -1,10 +1,10 @@
 package router
 
 import (
-	"voice_server/internal/bootstrap"
-	"voice_server/internal/handlers"
-	"voice_server/internal/stream"
-	"voice_server/internal/ws"
+	"voice-server/internal/bootstrap"
+	"voice-server/internal/handlers"
+	"voice-server/internal/stream"
+	"voice-server/internal/ws"
 
 	"github.com/gin-gonic/gin"
 )

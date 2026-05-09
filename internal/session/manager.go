@@ -9,9 +9,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"voice_server/config"
-	"voice_server/internal/logger"
-	"voice_server/internal/pool"
+	"voice-server/config"
+	"voice-server/internal/logger"
+	"voice-server/internal/pool"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )

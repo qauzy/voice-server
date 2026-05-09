@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"voice_server/internal/logger"
+	"voice-server/internal/logger"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )

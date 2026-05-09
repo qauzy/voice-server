@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"voice_server/internal/logger"
-	"voice_server/internal/pool"
+	"voice-server/internal/logger"
+	"voice-server/internal/pool"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )

@@ -13,7 +13,7 @@ COPY . .
 # 设置 CGO 链接库路径
 ENV CGO_LDFLAGS="-L/app/lib/ten-vad/lib/Linux/x64"
 ENV CGO_CFLAGS="-I/app/lib/ten-vad/include"
-RUN go build -ldflags="-s -w" -o voice_server main.go
+RUN go build -ldflags="-s -w" -o voice-server main.go
 
 # 阶段2：模型下载
 FROM ubuntu:22.04 AS model-downloader
@@ -32,7 +32,7 @@ RUN cd models && curl -L --retry 5 -o speaker/3dspeaker_speech_campplus_sv_zh_en
 FROM ubuntu:22.04 AS final
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libc++1 libc++abi1
-COPY --from=builder /app/voice_server .
+COPY --from=builder /app/voice-server .
 COPY --from=model-downloader /app/models ./models
 # 直接复制本地的silero_vad模型文件
 #COPY models/vad/silero_vad/silero_vad.onnx ./models/vad/silero_vad/
@@ -45,4 +45,4 @@ RUN mkdir -p data/speaker logs
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8080
-CMD ["./voice_server"]
+CMD ["./voice-server"]

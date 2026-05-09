@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"voice_server/config"
-	"voice_server/internal/bootstrap"
-	"voice_server/internal/logger"
-	"voice_server/internal/router"
-	"voice_server/internal/stream"
+	"voice-server/config"
+	"voice-server/internal/bootstrap"
+	"voice-server/internal/logger"
+	"voice-server/internal/router"
+	"voice-server/internal/stream"
 )
 
 func main() {

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"voice_server/internal/logger"
+	"voice-server/internal/logger"
 )
 
 // JSONVectorDB JSON 文件存储实现

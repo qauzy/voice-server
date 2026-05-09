@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"voice_server/config"
-	"voice_server/internal/logger"
+	"voice-server/config"
+	"voice-server/internal/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-audio/audio"

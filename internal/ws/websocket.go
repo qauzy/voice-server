@@ -1,13 +1,13 @@
 package ws
 
 import (
-	"voice_server/config"
-	"voice_server/internal/logger"
-	"voice_server/internal/session"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
 	"time"
+	"voice-server/config"
+	"voice-server/internal/logger"
+	"voice-server/internal/session"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 

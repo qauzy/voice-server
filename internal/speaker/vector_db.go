@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"voice_server/internal/logger"
+	"voice-server/internal/logger"
 
 	"github.com/qdrant/go-client/qdrant"
 )

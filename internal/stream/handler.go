@@ -8,8 +8,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"voice_server/config"
-	"voice_server/internal/logger"
+	"voice-server/config"
+	"voice-server/internal/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

@@ -154,7 +154,7 @@ func InitConfig(configPath string) error {
 		viper.SetConfigType("json")
 		viper.AddConfigPath(".")
 		viper.AddConfigPath("./config")
-		viper.AddConfigPath("/etc/voice_server/")
+		viper.AddConfigPath("/etc/voice-server/")
 	}
 
 	// 设置环境变量前缀

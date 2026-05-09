@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY go.mod go.sum ./
 RUN go env -w GOPROXY=https://goproxy.cn,direct && go mod download
 COPY . .
-RUN go build -ldflags="-s -w" -o voice_server main.go
+RUN go build -ldflags="-s -w" -o voice-server main.go
 
 # 阶段2：模型下载
 FROM ubuntu:22.04 AS model-downloader
@@ -36,7 +36,7 @@ RUN echo "deb http://mirrors.aliyun.com/ubuntu/ jammy main restricted universe m
     && echo "deb http://mirrors.aliyun.com/ubuntu/ jammy-backports main restricted universe multiverse" >> /etc/apt/sources.list \
     && echo "deb http://mirrors.aliyun.com/ubuntu/ jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
 RUN apt-get update && apt-get install -y --no-install-recommends libc++1 libc++abi1
-COPY --from=builder /app/voice_server .
+COPY --from=builder /app/voice-server .
 COPY --from=model-downloader /app/models ./models
 # 直接复制本地的silero_vad模型文件
 #COPY models/vad/silero_vad/silero_vad.onnx ./models/vad/silero_vad/
@@ -47,4 +47,4 @@ ENV LD_LIBRARY_PATH=/app/lib:/app/lib/ten-vad/lib/Linux/x64
 RUN adduser --disabled-password --gecos "" appuser && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8080
-CMD ["./voice_server"]
+CMD ["./voice-server"]

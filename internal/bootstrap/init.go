@@ -5,14 +5,14 @@ import (
 	"os"
 	"strconv"
 
-	"voice_server/config"
-	"voice_server/internal/config/hotreload"
-	"voice_server/internal/logger"
-	"voice_server/internal/middleware"
-	"voice_server/internal/pool"
-	"voice_server/internal/session"
-	"voice_server/internal/speaker"
-	"voice_server/internal/stream"
+	"voice-server/config"
+	"voice-server/internal/config/hotreload"
+	"voice-server/internal/logger"
+	"voice-server/internal/middleware"
+	"voice-server/internal/pool"
+	"voice-server/internal/session"
+	"voice-server/internal/speaker"
+	"voice-server/internal/stream"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )
