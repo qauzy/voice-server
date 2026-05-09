@@ -354,78 +354,77 @@ func (m *Manager) processSileroVAD(session *Session, sessionID string, float32Sl
 	return nil
 }
 
-// processTenVAD 处理TEN-VAD
+// processTenVAD 处理TEN-VAD（使用 sherpa-onnx API）
 func (m *Manager) processTenVAD(session *Session, sessionID string, float32Slice []float32) error {
-	// 类型断言获取TEN-VAD实例
-	tenVADInstance, ok := session.VADInstance.(*pool.TenVADInstance)
+	// 类型断言获取Sherpa TEN-VAD实例
+	tenVADInstance, ok := session.VADInstance.(*pool.SherpaTenVADInstance)
 	if !ok {
 		return fmt.Errorf("invalid TEN-VAD instance type")
 	}
 
-	hopSize := config.GlobalConfig.VAD.TenVAD.HopSize
-	minSpeechFrames := config.GlobalConfig.VAD.TenVAD.MinSpeechFrames
-	maxSilenceFrames := config.GlobalConfig.VAD.TenVAD.MaxSilenceFrames
+	// 使用 sherpa-onnx VAD API
+	tenVADInstance.VAD.AcceptWaveform(float32Slice)
 
-	// 分帧处理
-	for i := 0; i < len(float32Slice); i += hopSize {
-		end := i + hopSize
-		if end > len(float32Slice) {
-			end = len(float32Slice)
-		}
-		frame := float32Slice[i:end]
-		int16Frame := make([]int16, len(frame))
-		for j, f := range frame {
-			int16Frame[j] = int16(f * 32768)
-		}
-		_, flag, err := pool.GetInstance().ProcessAudio(tenVADInstance.Handle, int16Frame)
-		if err != nil {
-			return fmt.Errorf("TEN-VAD ProcessAudio error: %v", err)
-		}
+	// 检测是否在说话
+	if tenVADInstance.VAD.IsSpeech() && !session.isInSpeech {
+		logger.Debugf("Session %s: Speech started", sessionID)
+		session.isInSpeech = true
+		session.currentSegment = make([]float32, 0)
+		session.silenceFrameCount = 0
+	}
 
-		if flag == 1 {
-			if !session.isInSpeech {
-				logger.Debugf("Session %s: Speech started", sessionID)
-				session.isInSpeech = true
-				session.currentSegment = make([]float32, 0)
-				session.silenceFrameCount = 0
+	// 如果不在说话
+	if !tenVADInstance.VAD.IsSpeech() {
+		if session.isInSpeech {
+			session.silenceFrameCount++
+			// 处理累积的音频
+			if len(session.currentSegment) > 0 {
+				// 把累积的音频送到 VAD 检测
+				tenVADInstance.VAD.AcceptWaveform(session.currentSegment)
 			}
-			session.currentSegment = append(session.currentSegment, frame...)
-			session.silenceFrameCount = 0 // 重置静音计数
-		} else {
-			if session.isInSpeech {
-				session.silenceFrameCount++
-				session.currentSegment = append(session.currentSegment, frame...)
-				if session.silenceFrameCount >= maxSilenceFrames {
-					frameCount := len(session.currentSegment) / hopSize
-					if frameCount >= minSpeechFrames {
-						logger.Debugf("Session %s: Speech segment completed with %d samples (%d frames)", sessionID, len(session.currentSegment), frameCount)
-						duration := float64(len(session.currentSegment)) / float64(config.GlobalConfig.Audio.SampleRate)
-						logger.Infof("ASR segment length: %.2fs, samples: %d", duration, len(session.currentSegment))
-						taskID := fmt.Sprintf("%s_%d", sessionID, time.Now().UnixNano())
-						segmentCopy := make([]float32, len(session.currentSegment))
-						copy(segmentCopy, session.currentSegment)
-						go func(segment []float32, sessionID string, taskID string) {
-							stream := sherpa.NewOfflineStream(m.recognizer)
-							defer sherpa.DeleteOfflineStream(stream)
-							stream.AcceptWaveform(config.GlobalConfig.Audio.SampleRate, segment)
-							m.recognizer.Decode(stream)
-							result := stream.GetResult()
-							if result != nil {
-								m.handleRecognitionResult(sessionID, result.Text, nil)
-							} else {
-								m.handleRecognitionResult(sessionID, "", fmt.Errorf("recognition failed"))
-							}
-						}(segmentCopy, sessionID, taskID)
+		}
+	} else {
+		// 正在说话，累积音频
+		session.currentSegment = append(session.currentSegment, float32Slice...)
+	}
+
+	// 检查是否有语音段输出
+	for !tenVADInstance.VAD.IsEmpty() {
+		segment := tenVADInstance.VAD.Front()
+		tenVADInstance.VAD.Pop()
+
+		if segment != nil && len(segment.Samples) > 0 {
+			duration := float64(len(segment.Samples)) / float64(config.GlobalConfig.Audio.SampleRate)
+			minSpeechDuration := float64(config.GlobalConfig.VAD.TenVAD.MinSpeechDuration)
+
+			if duration >= minSpeechDuration {
+				logger.Debugf("Session %s: Speech segment completed with %d samples (%.2fs)", sessionID, len(segment.Samples), duration)
+				logger.Infof("ASR segment length: %.2fs, samples: %d", duration, len(segment.Samples))
+
+				taskID := fmt.Sprintf("%s_%d", sessionID, time.Now().UnixNano())
+				segmentCopy := make([]float32, len(segment.Samples))
+				copy(segmentCopy, segment.Samples)
+
+				go func(segment []float32, sessionID string, taskID string) {
+					stream := sherpa.NewOfflineStream(m.recognizer)
+					defer sherpa.DeleteOfflineStream(stream)
+					stream.AcceptWaveform(config.GlobalConfig.Audio.SampleRate, segment)
+					m.recognizer.Decode(stream)
+					result := stream.GetResult()
+					if result != nil {
+						m.handleRecognitionResult(sessionID, result.Text, nil)
 					} else {
-						logger.Debugf("Session %s: Speech segment too short (%d frames), discarding", sessionID, frameCount)
+						m.handleRecognitionResult(sessionID, "", fmt.Errorf("recognition failed"))
 					}
-					session.isInSpeech = false
-					session.silenceFrameCount = 0
-					session.currentSegment = nil
-				}
+				}(segmentCopy, sessionID, taskID)
 			}
 		}
 	}
+
+	// 重置会话状态
+	session.isInSpeech = false
+	session.silenceFrameCount = 0
+	session.currentSegment = nil
 
 	return nil
 }

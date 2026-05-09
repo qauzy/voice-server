@@ -16,31 +16,38 @@
     "max_send_errors": 10
   },
   "vad": {
-    "provider": "ten_vad",
-    "pool_size": 20,
+    "provider": "rknn",
+    "type": "silero_vad",
+    "pool_size": 10,
     "threshold": 0.3,
     "silero_vad":{
-      "model_path": "models/vad/silero_vad/silero_vad.onnx",
-      "min_silence_duration": 0.1,
+      "model_path": "models/vad/silero-vad-v4-rk3588.rknn",
+      "min_silence_duration": 0.05,
       "min_speech_duration": 0.25,
       "max_speech_duration": 8.0,
       "window_size": 512,
-      "buffer_size_seconds": 10.0
+      "buffer_size_seconds": 10.0,
+      "provider": "rknn"
     },
     "ten_vad":{
-        "hop_size": 512,
-        "min_speech_frames": 12,
-        "max_silence_frames": 5
-      }
+      "model_path": "models/vad/ten-vad.int8.onnx",
+      "threshold": 0.5,
+      "min_silence_duration": 0.5,
+      "min_speech_duration": 0.25,
+      "max_speech_duration": 10,
+      "window_size": 256,
+      "buffer_size_seconds": 5,
+      "provider": "rknn"
+    }
   },
   "recognition": {
-    "enabled": false,
-    "model_path": "models/asr/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx",
-    "tokens_path": "models/asr/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt",
+    "enabled": true,
+    "model_path": "models/asr/sherpa-onnx-rk3588-20-seconds-sense-voice-zh-en-ja-ko-yue-2025-09-09/model.rknn",
+    "tokens_path": "models/asr/sherpa-onnx-rk3588-20-seconds-sense-voice-zh-en-ja-ko-yue-2025-09-09/tokens.txt",
     "language": "auto",
     "use_inverse_text_normalization": false,
     "num_threads": 16,
-    "provider": "cpu",
+    "provider": "rknn",
     "debug": false
   },
   "speaker": {
@@ -92,5 +99,23 @@
     "max_backups": 5,
     "max_age": 30,
     "compress": true
+  },
+  "stream_recognition": {
+    "enabled": false,
+    "model": {
+      "encoder": "models/stream/encoder.rknn",
+      "decoder": "models/stream/decoder.rknn",
+      "joiner": "models/stream/joiner.rknn",
+      "tokens": "models/stream/tokens.txt"
+    },
+    "provider": "rknn",
+    "num_threads": 1,
+    "max_audio_len": 20,
+    "decoding_method": "greedy_search",
+    "endpoint": {
+      "rule_1_min_trailing_silence": 2.4,
+      "rule_2_min_trailing_silence": 1.2,
+      "rule_3_min_utterance_length": 20
+    }
   }
 } 

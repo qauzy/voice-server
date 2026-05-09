@@ -38,16 +38,16 @@ type Config struct {
 		Debug                       bool   `mapstructure:"debug"`
 	} `mapstructure:"recognition"`
 	Speaker struct {
-		Enabled          bool    `mapstructure:"enabled"`
-		ModelPath        string  `mapstructure:"model_path"`
-		NumThreads       int     `mapstructure:"num_threads"`
-		Provider         string  `mapstructure:"provider"`
-		Threshold        float32 `mapstructure:"threshold"`
-		DataDir          string  `mapstructure:"data_dir"`
-		SaveAudioOnFinish bool   `mapstructure:"save_audio_on_finish"`
-		AudioSaveDir     string  `mapstructure:"audio_save_dir"`
-		StorageType      string  `mapstructure:"storage_type"`
-		JSONStorage      struct {
+		Enabled           bool    `mapstructure:"enabled"`
+		ModelPath         string  `mapstructure:"model_path"`
+		NumThreads        int     `mapstructure:"num_threads"`
+		Provider          string  `mapstructure:"provider"`
+		Threshold         float32 `mapstructure:"threshold"`
+		DataDir           string  `mapstructure:"data_dir"`
+		SaveAudioOnFinish bool    `mapstructure:"save_audio_on_finish"`
+		AudioSaveDir      string  `mapstructure:"audio_save_dir"`
+		StorageType       string  `mapstructure:"storage_type"`
+		JSONStorage       struct {
 			FilePath string `mapstructure:"file_path"`
 		} `mapstructure:"json_storage"`
 		Qdrant struct {
@@ -87,9 +87,11 @@ type Config struct {
 		MaxAge     int    `mapstructure:"max_age"`
 		Compress   bool   `mapstructure:"compress"`
 	} `mapstructure:"logging"`
+	StreamRecognition StreamRecognitionConfig `mapstructure:"stream_recognition"`
 }
 
 type VADConfig struct {
+	Type      string        `mapstructure:"type"`
 	Provider  string        `mapstructure:"provider"`
 	PoolSize  int           `mapstructure:"pool_size"`
 	Threshold float32       `mapstructure:"threshold"`
@@ -108,9 +110,36 @@ type SileroVADConf struct {
 }
 
 type TenVADConf struct {
-	HopSize          int `mapstructure:"hop_size"`
-	MinSpeechFrames  int `mapstructure:"min_speech_frames"`
-	MaxSilenceFrames int `mapstructure:"max_silence_frames"`
+	ModelPath          string  `mapstructure:"model_path"`
+	Threshold          float32 `mapstructure:"threshold"`
+	MinSilenceDuration float32 `mapstructure:"min_silence_duration"`
+	MinSpeechDuration  float32 `mapstructure:"min_speech_duration"`
+	MaxSpeechDuration  float32 `mapstructure:"max_speech_duration"`
+	WindowSize         int     `mapstructure:"window_size"`
+	BufferSizeSeconds  float32 `mapstructure:"buffer_size_seconds"`
+}
+
+type StreamRecognitionConfig struct {
+	Enabled        bool              `mapstructure:"enabled"`
+	Model          StreamModelConfig `mapstructure:"model"`
+	Provider       string            `mapstructure:"provider"`
+	NumThreads     int               `mapstructure:"num_threads"`
+	MaxAudioLen    int               `mapstructure:"max_audio_len"`
+	DecodingMethod string            `mapstructure:"decoding_method"`
+	Endpoint       EndpointConfig    `mapstructure:"endpoint"`
+}
+
+type StreamModelConfig struct {
+	Encoder string `mapstructure:"encoder"`
+	Decoder string `mapstructure:"decoder"`
+	Joiner  string `mapstructure:"joiner"`
+	Tokens  string `mapstructure:"tokens"`
+}
+
+type EndpointConfig struct {
+	Rule1MinTrailingSilence float32 `mapstructure:"rule_1_min_trailing_silence"`
+	Rule2MinTrailingSilence float32 `mapstructure:"rule_2_min_trailing_silence"`
+	Rule3MinUtteranceLength float32 `mapstructure:"rule_3_min_utterance_length"`
 }
 
 var GlobalConfig Config

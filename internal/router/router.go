@@ -3,6 +3,7 @@ package router
 import (
 	"voice_server/internal/bootstrap"
 	"voice_server/internal/handlers"
+	"voice_server/internal/stream"
 	"voice_server/internal/ws"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,10 @@ func NewRouter(deps *bootstrap.AppDependencies) *gin.Engine {
 	ginRouter.GET("/ws", func(c *gin.Context) {
 		ws.HandleWebSocket(c.Writer, c.Request, deps.SessionManager, deps.GlobalRecognizer)
 	})
+	ginRouter.GET("/stream", func(c *gin.Context) {
+		stream.HandleStreamWS(c, deps.OnlineRecognizer)
+	})
+
 	ginRouter.GET("/health", handlers.HealthHandler(deps))
 	ginRouter.GET("/stats", handlers.StatsHandler(deps))
 

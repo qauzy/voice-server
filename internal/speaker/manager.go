@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"voice_server/config"
 	"voice_server/internal/logger"
 	"voice_server/internal/pool"
 
@@ -200,7 +199,7 @@ func (m *Manager) extractEmbedding(audioData []float32, sampleRate int) ([]float
 	return embedding, nil
 }
 
-// filterSilenceWithVAD 使用TEN-VAD过滤静音，仅保留语音段
+// filterSilenceWithVAD 使用TEN-VAD过滤静音，仅保留语音段（使用 sherpa-onnx API）
 func (m *Manager) filterSilenceWithVAD(audioData []float32, sampleRate int) ([]float32, error) {
 	if m.vadPool == nil {
 		return audioData, nil
@@ -213,44 +212,29 @@ func (m *Manager) filterSilenceWithVAD(audioData []float32, sampleRate int) ([]f
 	}
 	defer m.vadPool.Put(vadInstance)
 
-	// 类型断言，确保是TEN-VAD实例
-	tenVADInstance, ok := vadInstance.(*pool.TenVADInstance)
+	// 类型断言确保是Sherpa TEN-VAD实例
+	sherpaTenVADInstance, ok := vadInstance.(*pool.SherpaTenVADInstance)
 	if !ok {
-		return nil, fmt.Errorf("VAD instance is not TEN-VAD type")
+		return nil, fmt.Errorf("VAD instance is not Sherpa TEN-VAD type")
 	}
 
-	hopSize := config.GlobalConfig.VAD.TenVAD.HopSize
+	// 使用 sherpa-onnx VAD API
+	sherpaTenVADInstance.VAD.AcceptWaveform(audioData)
+
 	var filteredAudio []float32
 
-	// 分帧处理音频
-	for i := 0; i < len(audioData); i += hopSize {
-		end := i + hopSize
-		if end > len(audioData) {
-			end = len(audioData)
-		}
-		frame := audioData[i:end]
+	// 检查是否有语音段
+	if sherpaTenVADInstance.VAD.IsSpeech() {
+		filteredAudio = audioData
+	}
 
-		// 将float32转换为int16
-		int16Frame := make([]int16, len(frame))
-		for j, f := range frame {
-			// 限制范围在[-1.0, 1.0]，然后转换为int16
-			if f > 1.0 {
-				f = 1.0
-			} else if f < -1.0 {
-				f = -1.0
-			}
-			int16Frame[j] = int16(f * 32768)
-		}
+	// 处理输出的语音段
+	for !sherpaTenVADInstance.VAD.IsEmpty() {
+		segment := sherpaTenVADInstance.VAD.Front()
+		sherpaTenVADInstance.VAD.Pop()
 
-		// 调用VAD处理
-		_, flag, err := pool.GetInstance().ProcessAudio(tenVADInstance.Handle, int16Frame)
-		if err != nil {
-			return nil, fmt.Errorf("TEN-VAD ProcessAudio error: %v", err)
-		}
-
-		// flag == 1 表示语音，保留该帧；flag == 0 表示静音，丢弃
-		if flag == 1 {
-			filteredAudio = append(filteredAudio, frame...)
+		if segment != nil && len(segment.Samples) > 0 {
+			filteredAudio = append(filteredAudio, segment.Samples...)
 		}
 	}
 
@@ -274,98 +258,47 @@ func (m *Manager) filterSilenceWithVADKeepEdges(audioData []float32, sampleRate 
 	}
 	defer m.vadPool.Put(vadInstance)
 
-	// 类型断言，确保是TEN-VAD实例
-	tenVADInstance, ok := vadInstance.(*pool.TenVADInstance)
+	// 类型断言确保是Sherpa TEN-VAD实例
+	sherpaTenVADInstance, ok := vadInstance.(*pool.SherpaTenVADInstance)
 	if !ok {
-		return nil, fmt.Errorf("VAD instance is not TEN-VAD type")
+		return nil, fmt.Errorf("VAD instance is not Sherpa TEN-VAD type")
 	}
 
-	hopSize := config.GlobalConfig.VAD.TenVAD.HopSize
+	// 使用 sherpa-onnx VAD API
+	sherpaTenVADInstance.VAD.AcceptWaveform(audioData)
 
-	// 计算100ms对应的采样点数
-	silenceSamples := int(float64(sampleRate) * 0.1) // 100ms = 0.1秒
+	var filteredAudio []float32
 
-	// 记录每帧的VAD结果和位置
-	type frameInfo struct {
-		startIdx int
-		endIdx   int
-		isSpeech bool
-	}
+	// 处理输出的语音段
+	for !sherpaTenVADInstance.VAD.IsEmpty() {
+		segment := sherpaTenVADInstance.VAD.Front()
+		sherpaTenVADInstance.VAD.Pop()
 
-	var frames []frameInfo
+		if segment != nil && len(segment.Samples) > 0 {
+			// 保留前后100ms的静音
+			silenceSamples := int(float64(sampleRate) * 0.1)
+			startIdx := 0
+			endIdx := len(segment.Samples)
 
-	// 分帧处理音频，记录每帧的VAD结果
-	for i := 0; i < len(audioData); i += hopSize {
-		end := i + hopSize
-		if end > len(audioData) {
-			end = len(audioData)
-		}
-		frame := audioData[i:end]
-
-		// 将float32转换为int16
-		int16Frame := make([]int16, len(frame))
-		for j, f := range frame {
-			// 限制范围在[-1.0, 1.0]，然后转换为int16
-			if f > 1.0 {
-				f = 1.0
-			} else if f < -1.0 {
-				f = -1.0
+			if len(filteredAudio) > silenceSamples {
+				startIdx = len(filteredAudio) - silenceSamples
 			}
-			int16Frame[j] = int16(f * 32768)
-		}
-
-		// 调用VAD处理
-		_, flag, err := pool.GetInstance().ProcessAudio(tenVADInstance.Handle, int16Frame)
-		if err != nil {
-			return nil, fmt.Errorf("TEN-VAD ProcessAudio error: %v", err)
-		}
-
-		// flag == 1 表示语音，flag == 0 表示静音
-		frames = append(frames, frameInfo{
-			startIdx: i,
-			endIdx:   end,
-			isSpeech: flag == 1,
-		})
-	}
-
-	// 找到第一个和最后一个语音帧的位置
-	firstSpeechIdx := -1
-	lastSpeechIdx := -1
-	for i, frame := range frames {
-		if frame.isSpeech {
-			if firstSpeechIdx == -1 {
-				firstSpeechIdx = i
+			endIdx = len(segment.Samples) + silenceSamples
+			if endIdx > len(audioData) {
+				endIdx = len(audioData)
 			}
-			lastSpeechIdx = i
+
+			filteredAudio = append(filteredAudio, audioData[startIdx:endIdx]...)
 		}
 	}
 
-	// 如果没有找到语音帧，返回空
-	if firstSpeechIdx == -1 {
-		logger.Debugf("VAD filtering: no speech detected, returning empty audio")
-		return []float32{}, nil
+	// 如果没有检测到语音，返回原始音频
+	if len(filteredAudio) == 0 {
+		filteredAudio = audioData
 	}
 
-	// 计算保留的起始和结束位置
-	// 第一个语音帧的起始位置减去100ms
-	startIdx := frames[firstSpeechIdx].startIdx - silenceSamples
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	// 最后一个语音帧的结束位置加上100ms
-	endIdx := frames[lastSpeechIdx].endIdx + silenceSamples
-	if endIdx > len(audioData) {
-		endIdx = len(audioData)
-	}
-
-	// 提取保留的音频段
-	filteredAudio := audioData[startIdx:endIdx]
-
-	logger.Debugf("VAD filtering with edges: original %d samples, filtered %d samples (kept %.2f%%, first speech at %d, last speech at %d)",
-		len(audioData), len(filteredAudio),
-		float64(len(filteredAudio))/float64(len(audioData))*100,
-		frames[firstSpeechIdx].startIdx, frames[lastSpeechIdx].endIdx)
+	logger.Debugf("VAD filtering with edges: original %d samples, filtered %d samples",
+		len(audioData), len(filteredAudio))
 
 	return filteredAudio, nil
 }

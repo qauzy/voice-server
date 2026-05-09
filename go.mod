@@ -8,7 +8,7 @@ require (
 	github.com/go-audio/audio v1.0.0
 	github.com/go-audio/wav v1.1.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/k2-fsa/sherpa-onnx-go v1.12.4
+	github.com/k2-fsa/sherpa-onnx-go v1.12.39
 	github.com/qdrant/go-client v1.16.2
 	github.com/spf13/viper v1.20.1
 	golang.org/x/time v0.14.0
@@ -21,6 +21,7 @@ require (
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
+	github.com/gen2brain/malgo v0.11.24 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-audio/riff v1.0.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -29,9 +30,9 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-linux v1.12.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-macos v1.12.4 // indirect
-	github.com/k2-fsa/sherpa-onnx-go-windows v1.12.4 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-linux v1.12.39 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-macos v1.12.39 // indirect
+	github.com/k2-fsa/sherpa-onnx-go-windows v1.12.39 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

@@ -12,6 +12,7 @@ import (
 	"voice_server/internal/pool"
 	"voice_server/internal/session"
 	"voice_server/internal/speaker"
+	"voice_server/internal/stream"
 
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )
@@ -23,6 +24,7 @@ type AppDependencies struct {
 	SpeakerManager   *speaker.Manager
 	SpeakerHandler   *speaker.Handler
 	GlobalRecognizer *sherpa.OfflineRecognizer
+	OnlineRecognizer *sherpa.OnlineRecognizer
 	HotReloadMgr     *hotreload.HotReloadManager
 }
 
@@ -88,16 +90,26 @@ func InitApp(cfg *config.Config) (*AppDependencies, error) {
 		logger.Warnf("Failed to start config file watching, continuing without hot reload: %v", err)
 	}
 
-	// 初始化全局识别器（仅在recognition启用时初始化）
+	// 初始化全局离线识别器（仅在recognition启用时初始化）
 	var globalRecognizer *sherpa.OfflineRecognizer
 	if cfg.Recognition.Enabled {
-		// 初始化全局识别器
-		logger.Infof("🔧 Initializing global recognizer...")
+		logger.Infof("🔧 Initializing global offline recognizer...")
 		globalRecognizer, err = createRecognizer(cfg)
 		if err != nil {
 			logger.Errorf("Failed to initialize global recognizer: %v", err)
 			return nil, fmt.Errorf("failed to initialize global recognizer: %v", err)
 		}
+	}
+
+	// 初始化全局流式识别器（仅在stream_recognition启用时初始化）
+	var onlineRecognizer *sherpa.OnlineRecognizer
+	if cfg.StreamRecognition.Enabled {
+		logger.Infof("🔧 Initializing global online recognizer...")
+		if err := stream.ValidateConfig(); err != nil {
+			logger.Errorf("Stream recognition config invalid: %v", err)
+			return nil, fmt.Errorf("stream recognition config invalid: %v", err)
+		}
+		onlineRecognizer = stream.CreateOnlineRecognizer()
 	}
 
 	// 初始化VAD池（总是初始化，不依赖recognition.enabled）
@@ -205,6 +217,7 @@ func InitApp(cfg *config.Config) (*AppDependencies, error) {
 		SpeakerManager:   speakerManager,
 		SpeakerHandler:   speakerHandler,
 		GlobalRecognizer: globalRecognizer,
+		OnlineRecognizer: onlineRecognizer,
 		HotReloadMgr:     hotReloadMgr,
 	}, nil
 }

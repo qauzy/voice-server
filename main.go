@@ -13,6 +13,7 @@ import (
 	"voice_server/internal/bootstrap"
 	"voice_server/internal/logger"
 	"voice_server/internal/router"
+	"voice_server/internal/stream"
 )
 
 func main() {
@@ -37,7 +38,7 @@ func main() {
 	logger.Infof("✅ Configuration loaded")
 	config.PrintConfig()
 
-	// 初始化所有依赖
+	// 初始化所有依赖（含流式识别器校验与创建）
 	deps, err := bootstrap.InitApp(&config.GlobalConfig)
 	if err != nil {
 		logger.Errorf("Failed to initialize app dependencies:%v", err)
@@ -65,11 +66,16 @@ func main() {
 		if err := server.Shutdown(ctx); err != nil {
 			logger.Errorf("Server forced to shutdown:%v", err)
 		}
+		// 销毁全局流式识别器
+		if deps.OnlineRecognizer != nil {
+			stream.DeleteOnlineRecognizer(deps.OnlineRecognizer)
+		}
 		logger.Infof("✅ Server shutdown complete")
 	}()
 
 	logger.Infof("🌐 Listening on %s:%d", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
-	logger.Infof("🔗 WebSocket: ws://%s:%d/ws", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
+	logger.Infof("🔗 WebSocket (VAD+ASR): ws://%s:%d/ws", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
+	logger.Infof("🔗 WebSocket (Stream): ws://%s:%d/stream", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	logger.Infof("📊 Health check: http://%s:%d/health", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	logger.Infof("📈 Statistics: http://%s:%d/stats", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)
 	logger.Infof("🧪 Test page: http://%s:%d/", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)

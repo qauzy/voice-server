@@ -6,45 +6,46 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"voice_server/internal/logger"
+
+	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )
 
-// TenVADConfig TEN-VAD配置
-type TenVADConfig struct {
-	HopSize   int
-	Threshold float32
-	PoolSize  int
-	MaxIdle   int
+// SherpaTenVADConfig Sherpa TEN-VAD配置（使用 sherpa-onnx 内置 API）
+type SherpaTenVADConfig struct {
+	ModelConfig       *sherpa.VadModelConfig
+	BufferSizeSeconds float32
+	PoolSize          int
+	MaxIdle           int
 }
 
-// TenVADInstance TEN-VAD实例
-type TenVADInstance struct {
+// SherpaTenVADInstance Sherpa TEN-VAD实例
+type SherpaTenVADInstance struct {
 	ID       int
-	Handle   unsafe.Pointer
+	VAD      *sherpa.VoiceActivityDetector
 	LastUsed int64
 	InUse    int32
 	mu       sync.RWMutex
 }
 
 // GetID 获取实例ID
-func (i *TenVADInstance) GetID() int {
+func (i *SherpaTenVADInstance) GetID() int {
 	return i.ID
 }
 
 // GetType 获取VAD类型
-func (i *TenVADInstance) GetType() string {
+func (i *SherpaTenVADInstance) GetType() string {
 	return TEN_VAD_TYPE
 }
 
 // IsInUse 检查是否在使用中
-func (i *TenVADInstance) IsInUse() bool {
+func (i *SherpaTenVADInstance) IsInUse() bool {
 	return atomic.LoadInt32(&i.InUse) == 1
 }
 
 // SetInUse 设置使用状态
-func (i *TenVADInstance) SetInUse(inUse bool) {
+func (i *SherpaTenVADInstance) SetInUse(inUse bool) {
 	if inUse {
 		atomic.StoreInt32(&i.InUse, 1)
 	} else {
@@ -53,41 +54,47 @@ func (i *TenVADInstance) SetInUse(inUse bool) {
 }
 
 // GetLastUsed 获取最后使用时间
-func (i *TenVADInstance) GetLastUsed() int64 {
+func (i *SherpaTenVADInstance) GetLastUsed() int64 {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	return i.LastUsed
 }
 
 // SetLastUsed 设置最后使用时间
-func (i *TenVADInstance) SetLastUsed(timestamp int64) {
+func (i *SherpaTenVADInstance) SetLastUsed(timestamp int64) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.LastUsed = timestamp
 }
 
 // Reset 重置实例状态
-func (i *TenVADInstance) Reset() error {
-	// TEN-VAD不需要重置，每次处理都是独立的
-	return nil
-}
-
-// Destroy 销毁实例
-func (i *TenVADInstance) Destroy() error {
-	if i.Handle != nil {
-		tenVAD := GetInstance()
-		tenVAD.DestroyInstance(i.Handle)
-		i.Handle = nil
-		logger.Infof("🗑️ TEN-VAD instance %d destroyed", i.ID)
+func (i *SherpaTenVADInstance) Reset() error {
+	if i.VAD != nil {
+		for !i.VAD.IsEmpty() {
+			segment := i.VAD.Front()
+			i.VAD.Pop()
+			if segment != nil {
+			}
+		}
 	}
 	return nil
 }
 
-// TenVADPool TEN-VAD资源池
-type TenVADPool struct {
-	instances []*TenVADInstance
+// Destroy 销毁实例
+func (i *SherpaTenVADInstance) Destroy() error {
+	if i.VAD != nil {
+		sherpa.DeleteVoiceActivityDetector(i.VAD)
+		i.VAD = nil
+		logger.Infof("🗑️ Sherpa TEN-VAD instance destroyed")
+	}
+	return nil
+}
+
+// SherpaTenVADPool Sherpa TEN-VAD资源池
+type SherpaTenVADPool struct {
+	instances []*SherpaTenVADInstance
 	available chan VADInstanceInterface
-	config    *TenVADConfig
+	config    *SherpaTenVADConfig
 
 	// 统计信息
 	totalCreated int64
@@ -100,12 +107,12 @@ type TenVADPool struct {
 	cancel context.CancelFunc
 }
 
-// NewTenVADPool 创建新的TEN-VAD资源池
-func NewTenVADPool(config *TenVADConfig) *TenVADPool {
+// NewSherpaTenVADPool 创建新的Sherpa TEN-VAD资源池
+func NewSherpaTenVADPool(config *SherpaTenVADConfig) *SherpaTenVADPool {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	pool := &TenVADPool{
-		instances: make([]*TenVADInstance, 0, config.PoolSize),
+	pool := &SherpaTenVADPool{
+		instances: make([]*SherpaTenVADInstance, 0, config.PoolSize),
 		available: make(chan VADInstanceInterface, config.PoolSize),
 		config:    config,
 		ctx:       ctx,
@@ -116,10 +123,9 @@ func NewTenVADPool(config *TenVADConfig) *TenVADPool {
 }
 
 // Initialize 并行初始化VAD池
-func (p *TenVADPool) Initialize() error {
-	logger.Infof("🔧 Initializing TEN-VAD pool with %d instances...", p.config.PoolSize)
+func (p *SherpaTenVADPool) Initialize() error {
+	logger.Infof("🔧 Initializing Sherpa TEN-VAD pool with %d instances...", p.config.PoolSize)
 
-	// 并行初始化VAD实例
 	var initWg sync.WaitGroup
 	errorChan := make(chan error, p.config.PoolSize)
 
@@ -128,16 +134,14 @@ func (p *TenVADPool) Initialize() error {
 		go func(instanceID int) {
 			defer initWg.Done()
 
-			// 创建TEN-VAD实例
-			tenVAD := GetInstance()
-			handle, err := tenVAD.CreateInstance(p.config.HopSize, p.config.Threshold)
-			if err != nil {
-				errorChan <- fmt.Errorf("failed to create TEN-VAD instance %d: %v", instanceID, err)
+			vad := sherpa.NewVoiceActivityDetector(p.config.ModelConfig, p.config.BufferSizeSeconds)
+			if vad == nil {
+				errorChan <- fmt.Errorf("failed to create Sherpa TEN-VAD instance %d", instanceID)
 				return
 			}
 
-			instance := &TenVADInstance{
-				Handle:   handle,
+			instance := &SherpaTenVADInstance{
+				VAD:      vad,
 				LastUsed: time.Now().UnixNano(),
 				InUse:    0,
 				ID:       instanceID,
@@ -147,15 +151,13 @@ func (p *TenVADPool) Initialize() error {
 			p.instances = append(p.instances, instance)
 			p.mu.Unlock()
 
-			// 放入可用队列
 			select {
 			case p.available <- instance:
 				atomic.AddInt64(&p.totalCreated, 1)
-				logger.Infof("✅ TEN-VAD instance %d initialized", instanceID)
+				logger.Infof("✅ Sherpa TEN-VAD instance %d initialized", instanceID)
 			default:
-				// 队列满，销毁实例
-				tenVAD.DestroyInstance(handle)
-				errorChan <- fmt.Errorf("TEN-VAD pool queue full, instance %d discarded", instanceID)
+				sherpa.DeleteVoiceActivityDetector(vad)
+				errorChan <- fmt.Errorf("Sherpa TEN-VAD pool queue full, instance %d discarded", instanceID)
 			}
 		}(i)
 	}
@@ -163,113 +165,106 @@ func (p *TenVADPool) Initialize() error {
 	initWg.Wait()
 	close(errorChan)
 
-	// 检查初始化错误
 	var initErrors []error
 	for err := range errorChan {
 		if err != nil {
 			initErrors = append(initErrors, err)
-			logger.Warnf("⚠️ TEN-VAD initialization warning: %v", err)
+			logger.Warnf("⚠️ Sherpa TEN-VAD initialization warning: %v", err)
 		}
 	}
 
 	successCount := len(p.instances)
-	logger.Infof("🚀 TEN-VAD pool initialized with %d/%d instances", successCount, p.config.PoolSize)
+	logger.Infof("🚀 Sherpa TEN-VAD pool initialized with %d/%d instances", successCount, p.config.PoolSize)
 
 	if len(initErrors) > 0 && successCount == 0 {
-		return fmt.Errorf("failed to initialize any TEN-VAD instances")
+		return fmt.Errorf("failed to initialize any Sherpa TEN-VAD instances")
 	}
 
 	return nil
 }
 
 // Get 获取VAD实例
-func (p *TenVADPool) Get() (VADInstanceInterface, error) {
-	logger.Infof("🔍 Attempting to get TEN-VAD instance from pool (available: %d)", len(p.available))
+func (p *SherpaTenVADPool) Get() (VADInstanceInterface, error) {
+	logger.Infof("🔍 Attempting to get Sherpa TEN-VAD instance from pool (available: %d)", len(p.available))
 
 	select {
 	case instance := <-p.available:
-		logger.Infof("🎯 Got TEN-VAD instance %d from pool", instance.GetID())
-		if atomic.CompareAndSwapInt32(&instance.(*TenVADInstance).InUse, 0, 1) {
+		logger.Infof("🎯 Got Sherpa TEN-VAD instance %d from pool", instance.GetID())
+		if atomic.CompareAndSwapInt32(&instance.(*SherpaTenVADInstance).InUse, 0, 1) {
 			instance.SetLastUsed(time.Now().UnixNano())
 			atomic.AddInt64(&p.totalReused, 1)
 			atomic.AddInt64(&p.totalActive, 1)
-			logger.Infof("✅ TEN-VAD instance %d marked as in-use (active: %d)", instance.GetID(), atomic.LoadInt64(&p.totalActive))
+			logger.Infof("✅ Sherpa TEN-VAD instance %d marked as in-use (active: %d)", instance.GetID(), atomic.LoadInt64(&p.totalActive))
 			return instance, nil
 		}
-		// 实例已被使用，重新放回队列
-		logger.Warnf("⚠️ TEN-VAD instance %d already in use, returning to pool", instance.GetID())
+		logger.Warnf("⚠️ Sherpa TEN-VAD instance %d already in use, returning to pool", instance.GetID())
 		select {
 		case p.available <- instance:
 		default:
 		}
-		return p.Get() // 递归重试
+		return p.Get()
 	case <-time.After(100 * time.Millisecond):
-		// 超时，创建新实例
-		logger.Warnf("⏰ TEN-VAD pool timeout, creating new temporary instance")
+		logger.Warnf("⏰ Sherpa TEN-VAD pool timeout, creating new temporary instance")
 		return p.createNewInstance()
 	case <-p.ctx.Done():
-		logger.Error("❌ TEN-VAD pool is shutting down")
-		return nil, fmt.Errorf("TEN-VAD pool is shutting down")
+		logger.Errorf("❌ Sherpa TEN-VAD pool is shutting down")
+		return nil, fmt.Errorf("Sherpa TEN-VAD pool is shutting down")
 	}
 }
 
 // Put 归还VAD实例
-func (p *TenVADPool) Put(instance VADInstanceInterface) {
+func (p *SherpaTenVADPool) Put(instance VADInstanceInterface) {
 	if instance == nil {
-		logger.Warnf("⚠️ Attempted to put nil TEN-VAD instance")
+		logger.Warnf("⚠️ Attempted to put nil Sherpa TEN-VAD instance")
 		return
 	}
 
-	logger.Infof("🔄 Returning TEN-VAD instance %d to pool", instance.GetID())
+	logger.Infof("🔄 Returning Sherpa TEN-VAD instance %d to pool", instance.GetID())
 
-	if atomic.CompareAndSwapInt32(&instance.(*TenVADInstance).InUse, 1, 0) {
+	if atomic.CompareAndSwapInt32(&instance.(*SherpaTenVADInstance).InUse, 1, 0) {
 		instance.SetLastUsed(time.Now().UnixNano())
 		atomic.AddInt64(&p.totalActive, -1)
-		logger.Infof("✅ TEN-VAD instance %d marked as available (active: %d)", instance.GetID(), atomic.LoadInt64(&p.totalActive))
+		logger.Infof("✅ Sherpa TEN-VAD instance %d marked as available (active: %d)", instance.GetID(), atomic.LoadInt64(&p.totalActive))
 
-		// 重置VAD状态
 		if err := instance.Reset(); err != nil {
-			logger.Warnf("⚠️ Failed to reset TEN-VAD instance %d: %v", instance.GetID(), err)
+			logger.Warnf("⚠️ Failed to reset Sherpa TEN-VAD instance %d: %v", instance.GetID(), err)
 		}
 
 		select {
 		case p.available <- instance:
-			// 成功归还
-			logger.Infof("✅ TEN-VAD instance %d returned to pool (available: %d)", instance.GetID(), len(p.available))
+			logger.Infof("✅ Sherpa TEN-VAD instance %d returned to pool (available: %d)", instance.GetID(), len(p.available))
 		default:
-			// 队列满，销毁实例
-			logger.Warnf("⚠️ TEN-VAD pool queue full, destroying instance %d", instance.GetID())
+			logger.Warnf("⚠️ Sherpa TEN-VAD pool queue full, destroying instance %d", instance.GetID())
 			instance.Destroy()
 		}
 	} else {
-		logger.Warnf("⚠️ TEN-VAD instance %d was not in use, cannot return", instance.GetID())
+		logger.Warnf("⚠️ Sherpa TEN-VAD instance %d was not in use, cannot return", instance.GetID())
 	}
 }
 
 // createNewInstance 创建新的VAD实例
-func (p *TenVADPool) createNewInstance() (VADInstanceInterface, error) {
-	tenVAD := GetInstance()
-	handle, err := tenVAD.CreateInstance(p.config.HopSize, p.config.Threshold)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new TEN-VAD instance: %v", err)
+func (p *SherpaTenVADPool) createNewInstance() (VADInstanceInterface, error) {
+	vad := sherpa.NewVoiceActivityDetector(p.config.ModelConfig, p.config.BufferSizeSeconds)
+	if vad == nil {
+		return nil, fmt.Errorf("failed to create new Sherpa TEN-VAD instance")
 	}
 
-	instance := &TenVADInstance{
-		Handle:   handle,
+	instance := &SherpaTenVADInstance{
+		VAD:      vad,
 		LastUsed: time.Now().UnixNano(),
 		InUse:    1,
-		ID:       -1, // 临时实例
+		ID:       -1,
 	}
 
 	atomic.AddInt64(&p.totalCreated, 1)
 	atomic.AddInt64(&p.totalActive, 1)
 
-	logger.Infof("🆕 Created temporary TEN-VAD instance")
+	logger.Infof("🆕 Created temporary Sherpa TEN-VAD instance")
 	return instance, nil
 }
 
 // GetStats 获取统计信息
-func (p *TenVADPool) GetStats() map[string]interface{} {
+func (p *SherpaTenVADPool) GetStats() map[string]interface{} {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -286,17 +281,14 @@ func (p *TenVADPool) GetStats() map[string]interface{} {
 }
 
 // Shutdown 关闭VAD池
-func (p *TenVADPool) Shutdown() {
-	logger.Infof("🛑 Shutting down TEN-VAD pool...")
+func (p *SherpaTenVADPool) Shutdown() {
+	logger.Infof("🛑 Shutting down Sherpa TEN-VAD pool...")
 
-	// 取消上下文
 	p.cancel()
 
-	// 销毁所有实例
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// 清空可用队列
 	for {
 		select {
 		case instance := <-p.available:
@@ -307,7 +299,6 @@ func (p *TenVADPool) Shutdown() {
 	}
 
 cleanup_instances:
-	// 销毁所有实例
 	for _, instance := range p.instances {
 		instance.Destroy()
 	}
@@ -315,5 +306,5 @@ cleanup_instances:
 	p.instances = nil
 	close(p.available)
 
-	logger.Infof("✅ TEN-VAD pool shutdown complete")
+	logger.Infof("✅ Sherpa TEN-VAD pool shutdown complete")
 }
