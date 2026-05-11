@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"voice-server/config"
@@ -24,20 +26,13 @@ const (
 	audioChanBuf = 200
 )
 
-// HandleStreamWS 处理流式 ASR WebSocket 连接，rec 为全局共享的 OnlineRecognizer
-func HandleStreamWS(c *gin.Context, rec *sherpa.OnlineRecognizer) {
+// HandleStreamWS 处理流式 ASR WebSocket 连接
+// 每个连接独立创建 OnlineRecognizer，支持 rebuildRec 彻底重建
+func HandleStreamWS(c *gin.Context) {
 	if !config.GlobalConfig.StreamRecognition.Enabled {
 		logger.Warnf("Stream recognition is disabled")
 		c.JSON(http.StatusServiceUnavailable, map[string]string{
 			"error": "stream recognition is disabled",
-		})
-		return
-	}
-
-	if rec == nil {
-		logger.Errorf("OnlineRecognizer is nil, stream recognition unavailable")
-		c.JSON(http.StatusServiceUnavailable, map[string]string{
-			"error": "online recognizer not initialized",
 		})
 		return
 	}
@@ -49,14 +44,23 @@ func HandleStreamWS(c *gin.Context, rec *sherpa.OnlineRecognizer) {
 	}
 	defer conn.Close()
 
-	logger.Infof("📱 New stream connection from %s", c.Request.RemoteAddr)
+	logger.Infof("New stream connection from %s", c.Request.RemoteAddr)
 
-	runStreamSession(conn, rec)
+	runStreamSession(conn)
 }
 
-func runStreamSession(conn *websocket.Conn, rec *sherpa.OnlineRecognizer) {
+func runStreamSession(conn *websocket.Conn) {
 	audioCh := make(chan []float32, audioChanBuf)
 	var wg sync.WaitGroup
+
+	// 每个连接独立的时间戳追踪
+	var lastTextAt atomic.Int64
+	var lastDecodeAt atomic.Int64
+	var lastAudioAt atomic.Int64
+
+	lastTextAt.Store(time.Now().UnixNano())
+	lastDecodeAt.Store(time.Now().UnixNano())
+	lastAudioAt.Store(time.Now().UnixNano())
 
 	wg.Add(1)
 	go func() {
@@ -83,14 +87,16 @@ func runStreamSession(conn *websocket.Conn, rec *sherpa.OnlineRecognizer) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		processAudioStream(conn, audioCh, rec)
+		processAudioStream(conn, audioCh, &lastTextAt, &lastDecodeAt, &lastAudioAt)
 	}()
 
 	wg.Wait()
-	logger.Infof("🔌 Stream connection closed")
+	logger.Infof("Stream connection closed")
 }
 
-func processAudioStream(conn *websocket.Conn, audioCh chan []float32, rec *sherpa.OnlineRecognizer) {
+func processAudioStream(conn *websocket.Conn, audioCh chan []float32,
+	lastTextAt, lastDecodeAt, lastAudioAt *atomic.Int64) {
+
 	sampleRate := config.GlobalConfig.Audio.SampleRate
 	if sampleRate == 0 {
 		sampleRate = 16000
@@ -101,26 +107,43 @@ func processAudioStream(conn *websocket.Conn, audioCh chan []float32, rec *sherp
 		maxAudioLen = 20 * sampleRate
 	}
 
+	// 每个连接独立创建 OnlineRecognizer
+	rec := CreateOnlineRecognizer()
+	stream := sherpa.NewOnlineStream(rec)
+
 	var fullText string
 	var totalSamples int
 
-	resetState := func(reason string) {
-		logger.Infof("🔄 Resetting stream state: %s", reason)
+	rebuildRec := func(reason string) {
+		logger.Infof("Rebuilding recognizer: %s", reason)
+		sherpa.DeleteOnlineStream(stream)
+		sherpa.DeleteOnlineRecognizer(rec)
+		rec = CreateOnlineRecognizer()
+		stream = sherpa.NewOnlineStream(rec)
 		fullText = ""
 		totalSamples = 0
+		logger.Infof("Recognizer rebuilt ok")
 	}
 
-	// 每个连接独享一个 OnlineStream，不共享
-	stream := CreateOnlineStream(rec)
-	defer DeleteOnlineStream(stream)
+	defer func() {
+		sherpa.DeleteOnlineStream(stream)
+		sherpa.DeleteOnlineRecognizer(rec)
+	}()
 
 	for samples := range audioCh {
+		lastAudioAt.Store(time.Now().UnixNano())
+
+		// 有音频输入但超过 5s 没有任何文字输出 → 模型已失效，主动重建
+		if time.Since(time.Unix(0, lastTextAt.Load())) > 5*time.Second &&
+			time.Since(time.Unix(0, lastAudioAt.Load())) < time.Second {
+			rebuildRec("no output timeout")
+			lastTextAt.Store(time.Now().UnixNano())
+			continue
+		}
+
 		totalSamples += len(samples)
 		if totalSamples > maxAudioLen {
-			logger.Warnf("Audio too long, resetting stream: %d > %d", totalSamples, maxAudioLen)
-			DeleteOnlineStream(stream)
-			stream = CreateOnlineStream(rec)
-			resetState("max_audio_len")
+			rebuildRec("too long")
 			continue
 		}
 
@@ -128,23 +151,22 @@ func processAudioStream(conn *websocket.Conn, audioCh chan []float32, rec *sherp
 
 		if rec.IsReady(stream) {
 			rec.Decode(stream)
+			lastDecodeAt.Store(time.Now().UnixNano())
 		}
 
 		result := rec.GetResult(stream)
 		if result == nil {
 			continue
 		}
-
 		text := result.Text
 		if text == "" {
 			continue
 		}
 
+		lastTextAt.Store(time.Now().UnixNano())
+
 		if isGarbage(text) {
-			logger.Warnf("Garbage detected: %s, resetting", text)
-			DeleteOnlineStream(stream)
-			stream = CreateOnlineStream(rec)
-			resetState("garbage")
+			rebuildRec("garbage: " + text)
 			continue
 		}
 
@@ -165,9 +187,8 @@ func processAudioStream(conn *websocket.Conn, audioCh chan []float32, rec *sherp
 					"text": fullText,
 				})
 			}
-			DeleteOnlineStream(stream)
-			stream = CreateOnlineStream(rec)
-			resetState("endpoint")
+			// endpoint 时重建 rec
+			rebuildRec("final")
 		}
 	}
 }

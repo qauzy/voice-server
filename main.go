@@ -13,7 +13,6 @@ import (
 	"voice-server/internal/bootstrap"
 	"voice-server/internal/logger"
 	"voice-server/internal/router"
-	"voice-server/internal/stream"
 )
 
 func main() {
@@ -66,11 +65,7 @@ func main() {
 		if err := server.Shutdown(ctx); err != nil {
 			logger.Errorf("Server forced to shutdown:%v", err)
 		}
-		// 销毁全局流式识别器
-		if deps.OnlineRecognizer != nil {
-			stream.DeleteOnlineRecognizer(deps.OnlineRecognizer)
-		}
-		logger.Infof("✅ Server shutdown complete")
+		logger.Infof("Server shutdown complete")
 	}()
 
 	logger.Infof("🌐 Listening on %s:%d", config.GlobalConfig.Server.Host, config.GlobalConfig.Server.Port)

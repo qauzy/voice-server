@@ -24,7 +24,6 @@ type AppDependencies struct {
 	SpeakerManager   *speaker.Manager
 	SpeakerHandler   *speaker.Handler
 	GlobalRecognizer *sherpa.OfflineRecognizer
-	OnlineRecognizer *sherpa.OnlineRecognizer
 	HotReloadMgr     *hotreload.HotReloadManager
 }
 
@@ -47,7 +46,6 @@ func createRecognizer(cfg *config.Config) (*sherpa.OfflineRecognizer, error) {
 	if recognizer == nil {
 		return nil, fmt.Errorf("failed to create offline recognizer")
 	}
-
 	return recognizer, nil
 }
 
@@ -101,15 +99,13 @@ func InitApp(cfg *config.Config) (*AppDependencies, error) {
 		}
 	}
 
-	// 初始化全局流式识别器（仅在stream_recognition启用时初始化）
-	var onlineRecognizer *sherpa.OnlineRecognizer
+	// 校验流式识别配置（仅在启用时校验，rec 在每连接时创建）
 	if cfg.StreamRecognition.Enabled {
-		logger.Infof("🔧 Initializing global online recognizer...")
+		logger.Infof("🔧 Validating stream recognition config...")
 		if err := stream.ValidateConfig(); err != nil {
 			logger.Errorf("Stream recognition config invalid: %v", err)
 			return nil, fmt.Errorf("stream recognition config invalid: %v", err)
 		}
-		onlineRecognizer = stream.CreateOnlineRecognizer()
 	}
 
 	// 初始化VAD池（总是初始化，不依赖recognition.enabled）
@@ -217,7 +213,6 @@ func InitApp(cfg *config.Config) (*AppDependencies, error) {
 		SpeakerManager:   speakerManager,
 		SpeakerHandler:   speakerHandler,
 		GlobalRecognizer: globalRecognizer,
-		OnlineRecognizer: onlineRecognizer,
 		HotReloadMgr:     hotReloadMgr,
 	}, nil
 }

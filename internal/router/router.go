@@ -19,9 +19,7 @@ func NewRouter(deps *bootstrap.AppDependencies) *gin.Engine {
 	ginRouter.GET("/ws", func(c *gin.Context) {
 		ws.HandleWebSocket(c.Writer, c.Request, deps.SessionManager, deps.GlobalRecognizer)
 	})
-	ginRouter.GET("/stream", func(c *gin.Context) {
-		stream.HandleStreamWS(c, deps.OnlineRecognizer)
-	})
+	ginRouter.GET("/stream", stream.HandleStreamWS)
 
 	ginRouter.GET("/health", handlers.HealthHandler(deps))
 	ginRouter.GET("/stats", handlers.StatsHandler(deps))

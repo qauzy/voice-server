@@ -9,6 +9,8 @@ import (
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )
 
+// CreateOnlineRecognizer 创建一个新的 OnlineRecognizer 实例
+// 每个连接独立调用，支持 rebuildRec 彻底重建
 func CreateOnlineRecognizer() *sherpa.OnlineRecognizer {
 	cfg := config.GlobalConfig
 
@@ -50,7 +52,7 @@ func CreateOnlineRecognizer() *sherpa.OnlineRecognizer {
 		panic("failed to create online recognizer")
 	}
 
-	logger.Infof("✅ Online recognizer created: encoder=%s, decoder=%s, joiner=%s",
+	logger.Infof("Online recognizer created: encoder=%s, decoder=%s, joiner=%s",
 		cfg.StreamRecognition.Model.Encoder,
 		cfg.StreamRecognition.Model.Decoder,
 		cfg.StreamRecognition.Model.Joiner)
@@ -58,23 +60,11 @@ func CreateOnlineRecognizer() *sherpa.OnlineRecognizer {
 	return rec
 }
 
-func CreateOnlineStream(rec *sherpa.OnlineRecognizer) *sherpa.OnlineStream {
-	if rec == nil {
-		return nil
-	}
-	return sherpa.NewOnlineStream(rec)
-}
-
+// DeleteOnlineRecognizer 销毁 OnlineRecognizer
 func DeleteOnlineRecognizer(rec *sherpa.OnlineRecognizer) {
 	if rec != nil {
 		sherpa.DeleteOnlineRecognizer(rec)
-		logger.Infof("🗑️ Online recognizer destroyed")
-	}
-}
-
-func DeleteOnlineStream(stream *sherpa.OnlineStream) {
-	if stream != nil {
-		sherpa.DeleteOnlineStream(stream)
+		logger.Infof("Online recognizer destroyed")
 	}
 }
 
@@ -101,7 +91,11 @@ func GetMaxAudioLen() int {
 	if maxLen == 0 {
 		maxLen = 20
 	}
-	return maxLen * config.GlobalConfig.Audio.SampleRate
+	sampleRate := config.GlobalConfig.Audio.SampleRate
+	if sampleRate == 0 {
+		sampleRate = 16000
+	}
+	return maxLen * sampleRate
 }
 
 func GetDecodingMethod() string {
