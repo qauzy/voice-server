@@ -2,7 +2,6 @@ package stream
 
 import (
 	"encoding/json"
-	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -217,17 +216,17 @@ func isGarbage(text string) bool {
 }
 
 func bytesToFloat32(data []byte) []float32 {
-	n := len(data) / 4
+	// 客户端发送 int16 PCM（每样本 2 字节，小端序）
+	// 转换为 float32 归一化到 [-1.0, 1.0]
+	n := len(data) / 2
 	if n == 0 {
 		return nil
 	}
 	out := make([]float32, n)
 	for i := 0; i < n; i++ {
-		bits := uint32(data[i*4]) |
-			uint32(data[i*4+1])<<8 |
-			uint32(data[i*4+2])<<16 |
-			uint32(data[i*4+3])<<24
-		out[i] = math.Float32frombits(bits)
+		// 读取 int16 小端序
+		sample := int16(data[i*2]) | int16(data[i*2+1])<<8
+		out[i] = float32(sample) / 32768.0
 	}
 	return out
 }

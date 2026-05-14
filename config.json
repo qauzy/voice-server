@@ -51,7 +51,7 @@
     "debug": false
   },
   "speaker": {
-    "enabled": true,
+    "enabled": false,
     "model_path": "models/speaker/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
     "num_threads": 8,
     "provider": "cpu",
@@ -101,7 +101,7 @@
     "compress": true
   },
   "stream_recognition": {
-    "enabled": false,
+    "enabled": true,
     "model": {
       "encoder": "models/stream/encoder.rknn",
       "decoder": "models/stream/decoder.rknn",
